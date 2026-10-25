@@ -1,4 +1,4 @@
-# BuildLogic45 Insurance MCP Server
+# MCP Server .NET 10
 
 [![.NET](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![MCP C# SDK](https://img.shields.io/badge/MCP%20C%23%20SDK-2.3.0-blue)](https://github.com/modelcontextprotocol/csharp-sdk)
