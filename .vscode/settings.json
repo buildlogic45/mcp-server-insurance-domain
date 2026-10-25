@@ -1,0 +1,4 @@
+{
+  // Keep Copilot's tool list focused on this project's MCP servers during development.
+  "github.copilot.chat.githubMcpServer.enabled": false
+}

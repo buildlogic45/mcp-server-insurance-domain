@@ -1,0 +1,12 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Insurance HTTP MCP Server",
+      "type": "dotnet",
+      "request": "launch",
+      "projectPath": "${workspaceFolder}/src/BuildLogic45.Insurance.Host.Http/BuildLogic45.Insurance.Host.Http.csproj",
+      "launchConfigurationId": "TargetFramework=;http"
+    }
+  ]
+}

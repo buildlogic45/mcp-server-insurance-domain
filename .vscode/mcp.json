@@ -1,0 +1,23 @@
+{
+  "servers": {
+    // Copilot starts every server listed here. Both expose the same tools, so keep only the one
+    // you're working on enabled, otherwise Copilot may call the other one (and miss your breakpoints).
+    // "insurance-stdio": {
+    //   "type": "stdio",
+    //   "command": "dotnet",
+    //   "args": [
+    //     "run",
+    //     "--project",
+    //     "${workspaceFolder}/src/BuildLogic45.Insurance.Host.Stdio/BuildLogic45.Insurance.Host.Stdio.csproj"
+    //   ],
+    //   "env": {
+    //     "DOTNET_ENVIRONMENT": "Development",
+    //     "Logging__File__Path": "${workspaceFolder}/logs/insurance-stdio-.log"
+    //   }
+    // },
+    "insurance-http": {
+      "type": "http",
+      "url": "http://localhost:5088/mcp"
+    }
+  }
+}

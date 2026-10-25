@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/BuildLogic45.Insurance.Core/BuildLogic45.Insurance.Core.csproj" />
+    <Project Path="src/BuildLogic45.Insurance.Host.Http/BuildLogic45.Insurance.Host.Http.csproj" />
+    <Project Path="src/BuildLogic45.Insurance.Host.Stdio/BuildLogic45.Insurance.Host.Stdio.csproj" />
+    <Project Path="src/BuildLogic45.Insurance.Infrastructure/BuildLogic45.Insurance.Infrastructure.csproj" />
+    <Project Path="src/BuildLogic45.Insurance.Mcp/BuildLogic45.Insurance.Mcp.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/BuildLogic45.Insurance.Core.Tests/BuildLogic45.Insurance.Core.Tests.csproj" />
+    <Project Path="tests/BuildLogic45.Insurance.Mcp.IntegrationTests/BuildLogic45.Insurance.Mcp.IntegrationTests.csproj" />
+  </Folder>
+</Solution>
