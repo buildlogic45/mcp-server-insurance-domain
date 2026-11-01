@@ -3,8 +3,8 @@ using BuildLogic45.Insurance.Core.Common;
 namespace BuildLogic45.Insurance.Core.Policies;
 
 /// <summary>
-/// Persistence abstraction for policies. Implemented in-memory for now; a PostgreSQL
-/// implementation will replace it without changes to the service or MCP layers.
+/// Persistence abstraction for policies. Infrastructure provides in-memory and PostgreSQL
+/// implementations, selected by configuration without changes to the service or MCP layers.
 /// </summary>
 public interface IPolicyRepository
 {

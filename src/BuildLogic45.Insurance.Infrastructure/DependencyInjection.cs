@@ -1,6 +1,8 @@
 using BuildLogic45.Insurance.Core.Policies;
 using BuildLogic45.Insurance.Infrastructure.Persistence;
 using BuildLogic45.Insurance.Infrastructure.Persistence.InMemory;
+using BuildLogic45.Insurance.Infrastructure.Persistence.Postgres;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -20,6 +22,18 @@ public static class DependencyInjection
             case PersistenceProvider.InMemory:
                 // Singleton so data survives across MCP requests/sessions for the life of the process.
                 services.AddSingleton<IPolicyRepository, InMemoryPolicyRepository>();
+                break;
+            case PersistenceProvider.Postgres:
+                var connectionString = configuration.GetConnectionString(PersistenceOptions.ConnectionStringName);
+                if (string.IsNullOrWhiteSpace(connectionString))
+                {
+                    throw new InvalidOperationException(
+                        $"Persistence:Provider is Postgres but ConnectionStrings:{PersistenceOptions.ConnectionStringName} is not set.");
+                }
+
+                services.AddDbContext<InsuranceDbContext>(db => db.UseNpgsql(connectionString));
+                services.AddScoped<IPolicyRepository, PostgresPolicyRepository>();
+                services.AddHostedService<DatabaseInitializer>();
                 break;
             default:
                 throw new NotSupportedException($"Persistence provider '{options.Provider}' is not supported.");

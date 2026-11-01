@@ -12,7 +12,10 @@
     //   ],
     //   "env": {
     //     "DOTNET_ENVIRONMENT": "Development",
-    //     "Logging__File__Path": "${workspaceFolder}/logs/insurance-stdio-.log"
+    //     "Logging__File__Path": "${workspaceFolder}/logs/insurance-stdio-.log",
+    //     // To use PostgreSQL instead of the in-memory store:
+    //     // "Persistence__Provider": "Postgres",
+    //     // "ConnectionStrings__Insurance": "Host=localhost;Port=5432;Database=insurance;Username=insurance;Password=insurance"
     //   }
     // },
     "insurance-http": {

@@ -6,7 +6,7 @@
 
 A [Model Context Protocol (MCP)](https://modelcontextprotocol.io) server for the insurance domain, built with .NET 10 and the official MCP C# SDK. It lets AI assistants such as GitHub Copilot, Claude, or any MCP client manage insurance policies through tools, prompts and resources.
 
-The server runs on an **in-memory store seeded with sample policies** (e.g. `POL-2025-000101`), so no database is needed. Storage sits behind `IPolicyRepository`, ready to be replaced with PostgreSQL.
+Storage is pluggable through the `Persistence:Provider` setting: an **in-memory store** (the default, no database needed) or **PostgreSQL**. Both are seeded with the same sample policies (e.g. `POL-2025-000101`).
 
 ## Features
 
@@ -35,12 +35,13 @@ flowchart LR
     S --> M[Mcp<br/>Tools · Prompts · Resources]
     H --> M
     M --> CO[Core<br/>PolicyService · rules]
-    CO -->|IPolicyRepository| I[Infrastructure<br/>InMemoryPolicyRepository]
-    I --> DB[(In-memory store<br/>PostgreSQL planned)]
+    CO -->|IPolicyRepository| I[Infrastructure]
+    I -->|Provider = InMemory| MEM[(In-memory store)]
+    I -->|Provider = Postgres| DB[(PostgreSQL<br/>EF Core + Npgsql)]
 ```
 
 - **Core** holds the domain model, business rules and the `IPolicyRepository` contract. It has no MCP or storage dependencies.
-- **Infrastructure** implements the repository. `Persistence:Provider` selects the implementation, so adding PostgreSQL needs no changes elsewhere.
+- **Infrastructure** implements the repository. `Persistence:Provider` selects the implementation at startup; nothing outside Infrastructure knows which one is in use.
 - **Mcp** is a thin adapter: it maps MCP requests to Core and domain errors to MCP errors.
 - **Hosts** only choose the transport. Both call `WithInsuranceCapabilities()`, so stdio and HTTP behave identically.
 
@@ -49,20 +50,24 @@ flowchart LR
 ```text
 src/
   BuildLogic45.Insurance.Core/            # Domain model, business rules, IPolicyRepository
-  BuildLogic45.Insurance.Infrastructure/  # In-memory repository + sample data
+  BuildLogic45.Insurance.Infrastructure/  # In-memory and PostgreSQL repositories, EF Core migrations, sample data
   BuildLogic45.Insurance.Mcp/             # MCP tools, prompts and resources
   BuildLogic45.Insurance.Host.Stdio/      # stdio host
   BuildLogic45.Insurance.Host.Http/       # Streamable HTTP host (/mcp, /health)
 tests/
   BuildLogic45.Insurance.Core.Tests/              # Unit tests
+  BuildLogic45.Insurance.Infrastructure.Tests/    # PostgreSQL repository tests (need a database)
   BuildLogic45.Insurance.Mcp.IntegrationTests/    # End-to-end tests with a real MCP client
 .vscode/                                  # mcp.json (Copilot), launch.json (F5 debugging)
+docker-compose.yml                        # Local PostgreSQL
+dotnet-tools.json                         # dotnet-ef for migrations
 ```
 
 ## Prerequisites
 
 - [.NET SDK 10](https://dotnet.microsoft.com/download/dotnet/10.0)
 - [Node.js 22.19+](https://nodejs.org/), only for the MCP Inspector
+- PostgreSQL 14+ or Docker, only for the PostgreSQL provider
 - [VS Code](https://code.visualstudio.com/) with [GitHub Copilot](https://marketplace.visualstudio.com/items?itemName=GitHub.copilot-chat) and [C# Dev Kit](https://marketplace.visualstudio.com/items?itemName=ms-dotnettools.csdevkit), optional
 
 ## Getting started
@@ -92,9 +97,42 @@ Configuration (`appsettings.json` or environment variables):
 
 | Key | Default | Description |
 |---|---|---|
-| `Persistence:Provider` | `InMemory` | Storage backend |
-| `Persistence:SeedSampleData` | `true` | Load sample policies at startup |
+| `Persistence:Provider` | `InMemory` | Storage backend: `InMemory` or `Postgres` |
+| `Persistence:SeedSampleData` | `true` | Load sample policies at startup (PostgreSQL: only when the table is empty) |
+| `Persistence:ApplyMigrationsOnStartup` | `true` | PostgreSQL: create/upgrade the schema on startup |
+| `ConnectionStrings:Insurance` | *(empty)*; set in `appsettings.Development.json` for the HTTP host | PostgreSQL connection string, required when `Provider` is `Postgres` |
 | `Logging:File:Path` | `<app dir>/logs/insurance-stdio-.log` | stdio log file (rolls daily) |
+
+## Using PostgreSQL
+
+1. Start a database. With Docker, `docker compose up -d` starts PostgreSQL 17 with database, user and password all `insurance`, matching the HTTP host's `appsettings.Development.json`. Any existing PostgreSQL 14+ server works too.
+2. Switch the provider. Set `Persistence:Provider` to `Postgres` in `appsettings.json`, or use environment variables:
+
+   ```bash
+   export Persistence__Provider=Postgres
+   export ConnectionStrings__Insurance="Host=localhost;Port=5432;Database=insurance;Username=insurance;Password=insurance"
+   dotnet run --project src/BuildLogic45.Insurance.Host.Http
+   ```
+
+   The stdio host has no `appsettings.json`, so pass these as `env` entries in `.vscode/mcp.json` (a commented example is there).
+3. On startup the server applies EF Core migrations (creating the database if needed) and seeds the sample policies when the `policies` table is empty. Data now survives restarts and is shared by every server instance.
+
+On the very first run EF Core logs one `fail: ... An error occurred using the connection` line while it checks whether the database exists, before creating it. It is harmless.
+
+**Schema changes** use EF Core migrations ([`Persistence/Postgres/Migrations`](src/BuildLogic45.Insurance.Infrastructure/Persistence/Postgres/Migrations)):
+
+```bash
+dotnet tool restore
+dotnet ef migrations add <Name> --project src/BuildLogic45.Insurance.Infrastructure --output-dir Persistence/Postgres/Migrations
+```
+
+To apply migrations yourself instead of on startup, set `Persistence:ApplyMigrationsOnStartup` to `false` and run `dotnet ef database update --project src/BuildLogic45.Insurance.Infrastructure` with `ConnectionStrings__Insurance` set.
+
+**Repository tests** run against a real server and are skipped unless `INSURANCE_TEST_POSTGRES` is set. Each test creates and drops its own database, so the user needs `CREATEDB`:
+
+```bash
+INSURANCE_TEST_POSTGRES="Host=localhost;Username=insurance;Password=insurance" dotnet test
+```
 
 ## Testing locally
 
@@ -193,14 +231,15 @@ These work against the sample data, in the Inspector forms, the CLI or as Copilo
 | No logs in VS Code's MCP Output channel (stdio) | Copilot discards server stderr. Use `tail -f logs/insurance-stdio-*.log` |
 | Breakpoints not hit | Copilot is calling the other server. Enable only one in `.vscode/mcp.json` and reload the window |
 | Port 5088 already in use | Stop the other instance: `lsof -nP -iTCP:5088 -sTCP:LISTEN` |
-| Created data disappears | Data is in memory: each server process has its own copy, reset on restart |
+| Created data disappears | The in-memory provider keeps data per process and resets on restart. Use the PostgreSQL provider |
+| `ConnectionStrings:Insurance is not set` on startup | `Provider` is `Postgres` but no connection string was configured (stdio has no `appsettings.json`; use env vars) |
 | Inspector says unauthorized | Open the URL printed in the terminal, including the token |
 
 ## Roadmap
 
 - [x] Policy tools, prompts and resources with in-memory data
 - [ ] Claims management
-- [ ] PostgreSQL persistence
+- [x] PostgreSQL persistence
 - [ ] Authentication for the HTTP transport
 
 ## License

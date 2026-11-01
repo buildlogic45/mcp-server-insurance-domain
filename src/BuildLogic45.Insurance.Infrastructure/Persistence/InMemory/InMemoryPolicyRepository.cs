@@ -7,8 +7,8 @@ using Microsoft.Extensions.Options;
 namespace BuildLogic45.Insurance.Infrastructure.Persistence.InMemory;
 
 /// <summary>
-/// Thread-safe, process-local policy store. Data is lost on restart. Stand-in until the
-/// PostgreSQL repository is implemented.
+/// Thread-safe, process-local policy store. Data is lost on restart. Useful for demos and tests;
+/// use the PostgreSQL provider for durable storage.
 /// </summary>
 public sealed class InMemoryPolicyRepository : IPolicyRepository
 {

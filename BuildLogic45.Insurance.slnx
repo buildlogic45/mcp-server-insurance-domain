@@ -8,6 +8,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/BuildLogic45.Insurance.Core.Tests/BuildLogic45.Insurance.Core.Tests.csproj" />
+    <Project Path="tests/BuildLogic45.Insurance.Infrastructure.Tests/BuildLogic45.Insurance.Infrastructure.Tests.csproj" />
     <Project Path="tests/BuildLogic45.Insurance.Mcp.IntegrationTests/BuildLogic45.Insurance.Mcp.IntegrationTests.csproj" />
   </Folder>
 </Solution>
