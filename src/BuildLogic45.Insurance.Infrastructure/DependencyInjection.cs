@@ -32,8 +32,8 @@ public static class DependencyInjection
                 }
 
                 services.AddDbContext<InsuranceDbContext>(db => db.UseNpgsql(connectionString));
+                // The schema must already exist: it is created by the scripts in database/postgres.
                 services.AddScoped<IPolicyRepository, PostgresPolicyRepository>();
-                services.AddHostedService<DatabaseInitializer>();
                 break;
             default:
                 throw new NotSupportedException($"Persistence provider '{options.Provider}' is not supported.");

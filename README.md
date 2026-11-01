@@ -37,7 +37,7 @@ flowchart LR
     M --> CO[Core<br/>PolicyService · rules]
     CO -->|IPolicyRepository| I[Infrastructure]
     I -->|Provider = InMemory| MEM[(In-memory store)]
-    I -->|Provider = Postgres| DB[(PostgreSQL<br/>EF Core + Npgsql)]
+    I -->|Provider = Postgres| DB[(PostgreSQL<br/>EF Core, database-first)]
 ```
 
 - **Core** holds the domain model, business rules and the `IPolicyRepository` contract. It has no MCP or storage dependencies.
@@ -50,17 +50,19 @@ flowchart LR
 ```text
 src/
   BuildLogic45.Insurance.Core/            # Domain model, business rules, IPolicyRepository
-  BuildLogic45.Insurance.Infrastructure/  # In-memory and PostgreSQL repositories, EF Core migrations, sample data
+  BuildLogic45.Insurance.Infrastructure/  # In-memory and PostgreSQL repositories, scaffolded EF Core model
   BuildLogic45.Insurance.Mcp/             # MCP tools, prompts and resources
   BuildLogic45.Insurance.Host.Stdio/      # stdio host
   BuildLogic45.Insurance.Host.Http/       # Streamable HTTP host (/mcp, /health)
+database/
+  postgres/                               # SQL scripts: create database, create tables, seed data
 tests/
   BuildLogic45.Insurance.Core.Tests/              # Unit tests
   BuildLogic45.Insurance.Infrastructure.Tests/    # PostgreSQL repository tests (need a database)
   BuildLogic45.Insurance.Mcp.IntegrationTests/    # End-to-end tests with a real MCP client
 .vscode/                                  # mcp.json (Copilot), launch.json (F5 debugging)
 docker-compose.yml                        # Local PostgreSQL
-dotnet-tools.json                         # dotnet-ef for migrations
+dotnet-tools.json                         # dotnet-ef for scaffolding the EF Core model
 ```
 
 ## Prerequisites
@@ -98,15 +100,31 @@ Configuration (`appsettings.json` or environment variables):
 | Key | Default | Description |
 |---|---|---|
 | `Persistence:Provider` | `InMemory` | Storage backend: `InMemory` or `Postgres` |
-| `Persistence:SeedSampleData` | `true` | Load sample policies at startup (PostgreSQL: only when the table is empty) |
-| `Persistence:ApplyMigrationsOnStartup` | `true` | PostgreSQL: create/upgrade the schema on startup |
+| `Persistence:SeedSampleData` | `true` | In-memory only: load sample policies at startup. For PostgreSQL use the seed script |
 | `ConnectionStrings:Insurance` | *(empty)*; set in `appsettings.Development.json` for the HTTP host | PostgreSQL connection string, required when `Provider` is `Postgres` |
 | `Logging:File:Path` | `<app dir>/logs/insurance-stdio-.log` | stdio log file (rolls daily) |
 
 ## Using PostgreSQL
 
-1. Start a database. With Docker, `docker compose up -d` starts PostgreSQL 17 with database, user and password all `insurance`, matching the HTTP host's `appsettings.Development.json`. Any existing PostgreSQL 14+ server works too.
-2. Switch the provider. Set `Persistence:Provider` to `Postgres` in `appsettings.json`, or use environment variables:
+The PostgreSQL provider is **database-first**: the SQL scripts in [`database/postgres`](database/postgres) own the schema, and the EF Core model is scaffolded from the database. The application never creates or changes tables.
+
+| Script | Run as | Purpose |
+|---|---|---|
+| `001_create_database.sql` | superuser, any database | Creates the `insurance` role (dev password `insurance`) and database. Needs `psql` |
+| `002_create_tables.sql` | `insurance`, in `insurance` | Creates the `policies` table, constraints and indexes |
+| `003_seed_sample_data.sql` | `insurance`, in `insurance` | Optional: the same sample policies as the in-memory store |
+
+All scripts are safe to re-run.
+
+1. **Create the database.** With Docker, `docker compose up -d` runs all three scripts automatically the first time it starts. With your own PostgreSQL 14+ server:
+
+   ```bash
+   psql -h localhost -U postgres  -d postgres  -f database/postgres/001_create_database.sql
+   psql -h localhost -U insurance -d insurance -f database/postgres/002_create_tables.sql
+   psql -h localhost -U insurance -d insurance -f database/postgres/003_seed_sample_data.sql
+   ```
+
+2. **Switch the provider.** Set `Persistence:Provider` to `Postgres` in `appsettings.json`, or use environment variables:
 
    ```bash
    export Persistence__Provider=Postgres
@@ -115,20 +133,23 @@ Configuration (`appsettings.json` or environment variables):
    ```
 
    The stdio host has no `appsettings.json`, so pass these as `env` entries in `.vscode/mcp.json` (a commented example is there).
-3. On startup the server applies EF Core migrations (creating the database if needed) and seeds the sample policies when the `policies` table is empty. Data now survives restarts and is shared by every server instance.
 
-On the very first run EF Core logs one `fail: ... An error occurred using the connection` line while it checks whether the database exists, before creating it. It is harmless.
-
-**Schema changes** use EF Core migrations ([`Persistence/Postgres/Migrations`](src/BuildLogic45.Insurance.Infrastructure/Persistence/Postgres/Migrations)):
+**Changing the schema.** Edit `002_create_tables.sql` (or add a new numbered script for an existing database), apply it, then re-scaffold the EF Core model from the database:
 
 ```bash
 dotnet tool restore
-dotnet ef migrations add <Name> --project src/BuildLogic45.Insurance.Infrastructure --output-dir Persistence/Postgres/Migrations
+dotnet ef dbcontext scaffold "Host=localhost;Database=insurance;Username=insurance;Password=insurance" \
+  Npgsql.EntityFrameworkCore.PostgreSQL \
+  --project src/BuildLogic45.Insurance.Infrastructure \
+  --context InsuranceDbContext --context-dir Persistence/Postgres --output-dir Persistence/Postgres/Entities \
+  --context-namespace BuildLogic45.Insurance.Infrastructure.Persistence.Postgres \
+  --namespace BuildLogic45.Insurance.Infrastructure.Persistence.Postgres.Entities \
+  --no-onconfiguring --table policies --force
 ```
 
-To apply migrations yourself instead of on startup, set `Persistence:ApplyMigrationsOnStartup` to `false` and run `dotnet ef database update --project src/BuildLogic45.Insurance.Infrastructure` with `ConnectionStrings__Insurance` set.
+The scaffolded `InsuranceDbContext.cs` and `Entities/` are generated: don't edit them by hand. Mapping to the domain `Policy` lives in `PolicyMapper.cs`, so update it when columns change. The project must compile for scaffolding to run.
 
-**Repository tests** run against a real server and are skipped unless `INSURANCE_TEST_POSTGRES` is set. Each test creates and drops its own database, so the user needs `CREATEDB`:
+**Repository tests** run against a real server and are skipped unless `INSURANCE_TEST_POSTGRES` is set. Each test creates its own database, runs scripts `002` and `003` in it, and drops it afterwards, so the user needs `CREATEDB`:
 
 ```bash
 INSURANCE_TEST_POSTGRES="Host=localhost;Username=insurance;Password=insurance" dotnet test
@@ -233,6 +254,7 @@ These work against the sample data, in the Inspector forms, the CLI or as Copilo
 | Port 5088 already in use | Stop the other instance: `lsof -nP -iTCP:5088 -sTCP:LISTEN` |
 | Created data disappears | The in-memory provider keeps data per process and resets on restart. Use the PostgreSQL provider |
 | `ConnectionStrings:Insurance is not set` on startup | `Provider` is `Postgres` but no connection string was configured (stdio has no `appsettings.json`; use env vars) |
+| `relation "policies" does not exist` | The schema scripts haven't been run against that database. See [Using PostgreSQL](#using-postgresql) |
 | Inspector says unauthorized | Open the URL printed in the terminal, including the token |
 
 ## Roadmap

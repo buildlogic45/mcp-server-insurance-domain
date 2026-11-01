@@ -1,4 +1,6 @@
 # Local PostgreSQL for the Postgres persistence provider. Credentials are for local development only.
+# On first start (empty volume) the image runs database/postgres/*.sql in order, creating and seeding
+# the schema. To re-run them, remove the volume: docker compose down -v
 services:
   postgres:
     image: postgres:17
@@ -10,6 +12,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
+      - ./database/postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U insurance -d insurance"]
       interval: 5s

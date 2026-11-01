@@ -11,13 +11,10 @@ public sealed class PersistenceOptions
     public PersistenceProvider Provider { get; set; } = PersistenceProvider.InMemory;
 
     /// <summary>
-    /// Populate the store with sample data on startup. For PostgreSQL this only happens when the
-    /// policies table is empty, so existing data is never overwritten.
+    /// In-memory only: populate the store with sample data on startup. For PostgreSQL, run
+    /// <c>database/postgres/003_seed_sample_data.sql</c> instead.
     /// </summary>
     public bool SeedSampleData { get; set; } = true;
-
-    /// <summary>PostgreSQL only: apply pending EF Core migrations on startup.</summary>
-    public bool ApplyMigrationsOnStartup { get; set; } = true;
 }
 
 public enum PersistenceProvider

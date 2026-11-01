@@ -1,6 +1,6 @@
 using BuildLogic45.Insurance.Core.Policies;
 
-namespace BuildLogic45.Insurance.Infrastructure.Persistence;
+namespace BuildLogic45.Insurance.Infrastructure.Persistence.InMemory;
 
 /// <summary>Deterministic sample policies. Ids are 00000000-0000-0000-0000-00000000000N.</summary>
 internal static class PolicySeedData

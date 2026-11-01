@@ -2,28 +2,35 @@ using BuildLogic45.Insurance.Core.Common;
 using BuildLogic45.Insurance.Core.Policies;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
+using PolicyRow = BuildLogic45.Insurance.Infrastructure.Persistence.Postgres.Entities.Policy;
 
 namespace BuildLogic45.Insurance.Infrastructure.Persistence.Postgres;
 
 /// <summary>
-/// PostgreSQL-backed policy store. Reads are untracked, so the immutable <see cref="Policy"/>
-/// records returned here can be passed straight back to <see cref="UpdateAsync"/>.
+/// PostgreSQL-backed policy store over the scaffolded <see cref="InsuranceDbContext"/>. The schema is
+/// owned by the scripts in <c>database/postgres</c>; this class never creates or alters it.
 /// </summary>
 public sealed class PostgresPolicyRepository(InsuranceDbContext db) : IPolicyRepository
 {
     private const string UniqueViolation = "23505";
 
-    public Task<Policy?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default) =>
-        db.Policies.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+    public async Task<Policy?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var row = await db.Policies.AsNoTracking().FirstOrDefaultAsync(p => p.Id == id, cancellationToken);
+        return row?.ToDomain();
+    }
 
-    public Task<Policy?> GetByPolicyNumberAsync(string policyNumber, CancellationToken cancellationToken = default) =>
-        db.Policies.AsNoTracking().FirstOrDefaultAsync(
-            p => EF.Functions.ILike(p.PolicyNumber, EscapeLikePattern(policyNumber)),
-            cancellationToken);
+    public async Task<Policy?> GetByPolicyNumberAsync(string policyNumber, CancellationToken cancellationToken = default)
+    {
+        var pattern = EscapeLikePattern(policyNumber);
+        var row = await db.Policies.AsNoTracking()
+            .FirstOrDefaultAsync(p => EF.Functions.ILike(p.PolicyNumber, pattern), cancellationToken);
+        return row?.ToDomain();
+    }
 
     public async Task<PagedResult<Policy>> SearchAsync(PolicySearchCriteria criteria, CancellationToken cancellationToken = default)
     {
-        IQueryable<Policy> query = db.Policies.AsNoTracking();
+        IQueryable<PolicyRow> query = db.Policies.AsNoTracking();
 
         if (criteria.Query is { } text)
         {
@@ -36,12 +43,14 @@ public sealed class PostgresPolicyRepository(InsuranceDbContext db) : IPolicyRep
 
         if (criteria.Type is { } type)
         {
-            query = query.Where(p => p.Type == type);
+            var value = type.ToString();
+            query = query.Where(p => p.Type == value);
         }
 
         if (criteria.Status is { } status)
         {
-            query = query.Where(p => p.Status == status);
+            var value = status.ToString();
+            query = query.Where(p => p.Status == value);
         }
 
         if (criteria.EffectiveFrom is { } from)
@@ -55,18 +64,18 @@ public sealed class PostgresPolicyRepository(InsuranceDbContext db) : IPolicyRep
         }
 
         var totalCount = await query.CountAsync(cancellationToken);
-        var page = await query
+        var rows = await query
             .OrderBy(p => p.PolicyNumber)
             .Skip((criteria.Page - 1) * criteria.PageSize)
             .Take(criteria.PageSize)
             .ToListAsync(cancellationToken);
 
-        return new PagedResult<Policy>(page, criteria.Page, criteria.PageSize, totalCount);
+        return new PagedResult<Policy>(rows.Select(r => r.ToDomain()).ToList(), criteria.Page, criteria.PageSize, totalCount);
     }
 
     public async Task AddAsync(Policy policy, CancellationToken cancellationToken = default)
     {
-        db.Policies.Add(policy);
+        db.Policies.Add(policy.ToRow());
         try
         {
             await db.SaveChangesAsync(cancellationToken);
@@ -84,7 +93,7 @@ public sealed class PostgresPolicyRepository(InsuranceDbContext db) : IPolicyRep
 
     public async Task<bool> UpdateAsync(Policy policy, CancellationToken cancellationToken = default)
     {
-        db.Policies.Update(policy);
+        db.Policies.Update(policy.ToRow());
         try
         {
             await db.SaveChangesAsync(cancellationToken);

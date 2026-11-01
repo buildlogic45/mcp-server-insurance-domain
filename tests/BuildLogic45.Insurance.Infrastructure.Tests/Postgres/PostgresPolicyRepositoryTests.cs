@@ -1,5 +1,4 @@
 using BuildLogic45.Insurance.Core.Policies;
-using BuildLogic45.Insurance.Infrastructure.Persistence;
 using BuildLogic45.Insurance.Infrastructure.Persistence.Postgres;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
@@ -10,13 +9,16 @@ namespace BuildLogic45.Insurance.Infrastructure.Tests.Postgres;
 /// Runs against a real PostgreSQL server. Set <c>INSURANCE_TEST_POSTGRES</c> to a connection string
 /// whose user may create databases (e.g. <c>Host=localhost;Username=postgres;Password=postgres</c>);
 /// otherwise the tests are skipped. xUnit creates a new instance per test, so each test gets its
-/// own freshly migrated and seeded database, which is dropped afterwards.
+/// own database, built from the scripts in <c>database/postgres</c> and dropped afterwards.
 /// </summary>
 public sealed class PostgresPolicyRepositoryTests : IAsyncLifetime
 {
     private const string ConnectionStringVariable = "INSURANCE_TEST_POSTGRES";
 
     private static readonly string? ServerConnectionString = Environment.GetEnvironmentVariable(ConnectionStringVariable);
+
+    /// <summary>Scripts run inside the test database; 001 (role and database) is replaced by CREATE DATABASE below.</summary>
+    private static readonly string[] SchemaScripts = ["002_create_tables.sql", "003_seed_sample_data.sql"];
 
     private readonly string _databaseName = $"insurance_test_{Guid.NewGuid():N}";
     private InsuranceDbContext _db = null!;
@@ -29,14 +31,15 @@ public sealed class PostgresPolicyRepositoryTests : IAsyncLifetime
             return;
         }
 
+        await ExecuteAsync(MaintenanceConnectionString(), $"CREATE DATABASE {_databaseName}");
+
         var connectionString = new NpgsqlConnectionStringBuilder(ServerConnectionString) { Database = _databaseName }.ConnectionString;
+        foreach (var script in SchemaScripts)
+        {
+            await ExecuteAsync(connectionString, await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Sql", script)));
+        }
+
         _db = new InsuranceDbContext(new DbContextOptionsBuilder<InsuranceDbContext>().UseNpgsql(connectionString).Options);
-        await _db.Database.MigrateAsync();
-
-        _db.Policies.AddRange(PolicySeedData.Create());
-        await _db.SaveChangesAsync();
-        _db.ChangeTracker.Clear();
-
         _repository = new PostgresPolicyRepository(_db);
     }
 
@@ -47,8 +50,9 @@ public sealed class PostgresPolicyRepositoryTests : IAsyncLifetime
             return;
         }
 
-        await _db.Database.EnsureDeletedAsync();
         await _db.DisposeAsync();
+        NpgsqlConnection.ClearAllPools();
+        await ExecuteAsync(MaintenanceConnectionString(), $"DROP DATABASE IF EXISTS {_databaseName} WITH (FORCE)");
     }
 
     [SkippableFact]
@@ -159,6 +163,17 @@ public sealed class PostgresPolicyRepositoryTests : IAsyncLifetime
         var existing = await _repository.GetByPolicyNumberAsync("POL-2025-000101");
 
         await Assert.ThrowsAsync<InvalidOperationException>(() => _repository.AddAsync(existing! with { Id = Guid.NewGuid() }));
+    }
+
+    private static string MaintenanceConnectionString() =>
+        new NpgsqlConnectionStringBuilder(ServerConnectionString) { Database = "postgres" }.ConnectionString;
+
+    private static async Task ExecuteAsync(string connectionString, string sql)
+    {
+        await using var connection = new NpgsqlConnection(connectionString);
+        await connection.OpenAsync();
+        await using var command = new NpgsqlCommand(sql, connection);
+        await command.ExecuteNonQueryAsync();
     }
 
     private static void SkipWithoutDatabase() =>

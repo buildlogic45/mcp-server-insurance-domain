@@ -20,6 +20,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- The tests build each database from the same scripts used everywhere else. -->
+    <None Include="..\..\database\postgres\*.sql" LinkBase="Sql" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\src\BuildLogic45.Insurance.Infrastructure\BuildLogic45.Insurance.Infrastructure.csproj" />
   </ItemGroup>
 
